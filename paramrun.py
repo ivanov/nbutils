@@ -216,12 +216,24 @@ if __name__ == '__main__':
         log.warning('Running '+ ipynb)
         with open(ipynb) as f:
             nb = reads(f.read(), 'json')
-        output_nb = test_notebook(nb)    
-        nb_as_json = writes(output_nb, 'json')
-        if args.stdout:
-            sys.stdout.write(nb_as_json)
-        else:
-            outfile = args.prefix+ipynb
-            with open(outfile, 'w') as f:
-                f.write(nb_as_json)
-            log.warning("Wrote file " + outfile)
+
+        first_cell = nb.worksheets[0].cells[0]
+        if first_cell.input.startswith("## parameters"):
+            from collections import OrderedDict
+            params = OrderedDict()
+            exec(first_cell.input, globals(), params)
+            import itertools
+            for i, p in enumerate(itertools.product(*params.values())):
+                log.info("p = ", p)
+                header = "## Parameterized by %s\n" % ipynb
+                assignments = []
+                for k,v in zip(params.keys(), p):
+                    assignments.append('%s = %s #damnit' % (k,repr(v)))
+                first_cell.input = header + "\n".join(assignments)
+
+                nb_as_json = writes(nb, 'json')
+                basename = ipynb.rsplit('.ipynb')[0]
+                outfile = args.prefix + basename +"%04d.ipynb" % i
+                with open(outfile, 'w') as f:
+                    f.write(nb_as_json)
+                log.warning("Wrote file " + outfile)
