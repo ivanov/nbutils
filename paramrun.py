@@ -18,6 +18,9 @@ from Queue import Empty
 from IPython.zmq.blockingkernelmanager import BlockingKernelManager
 from IPython.nbformat.current import reads, writes, NotebookNode
 
+import logging
+logging.basicConfig(format='%(message)s')
+log = logging.getLogger(os.path.basename(__file__))
 
 def compare_png(a64, b64):
     """compare two b64 PNGs (incomplete)"""
@@ -70,13 +73,13 @@ def consolidate_outputs(outputs):
 def compare_outputs(test, ref, skip_compare=('png', 'traceback', 'latex', 'prompt_number')):
     for key in ref:
         if key not in test:
-            print "missing key: %s != %s" % (test.keys(), ref.keys())
+            log.info("missing key: %s != %s" % (test.keys(), ref.keys()))
             return False
         elif key not in skip_compare and sanitize(test[key]) != sanitize(ref[key]):
-            print "mismatch %s:" % key
-            print test[key]
-            print '  !=  '
-            print ref[key]
+            log.info("mismatch %s:" % key)
+            log.info(test[key])
+            log.info('  !=  ')
+            log.info(ref[key])
             return False
     return True
 
@@ -167,25 +170,58 @@ def test_notebook(nb):
             else:
                 successes += 1
             cell.outputs = outs
-            sys.stdout.write('.')
+            if log.getEffectiveLevel() < logging.FATAL:
+                sys.stderr.write('.')
 
-    print
-    print "tested notebook %s" % nb.metadata.name
-    print "    %3i cells successfully replicated" % successes
+    if log.getEffectiveLevel() <= logging.WARNING:
+        sys.stderr.write('\n')
+    log.info("tested notebook %s" % nb.metadata.name)
+    log.info("    %3i cells successfully replicated" % successes)
     if failures:
-        print "    %3i cells mismatched output" % failures
+        log.info("    %3i cells mismatched output" % failures)
     if errors:
-        print "    %3i cells failed to complete" % errors
+        log.info("    %3i cells failed to complete" % errors)
     km.shutdown_kernel()
     del km
     return nb
 
 if __name__ == '__main__':
-    for ipynb in sys.argv[1:]:
-        print "testing %s" % ipynb
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument('inputs', nargs='+', metavar='input',
+                        help='Paths to notebook files.')
+    parser.add_argument('-i', '--inplace', '--in-place', default=False,
+            action='store_true',
+            help='Overwrite existing notebook when given.')
+
+    parser.add_argument('-p', '--prefix', default='',
+                        help='Path for the destination of converted output')
+    parser.add_argument('-v', '--verbose', default=False, action='store_true',
+                        help='be verbose about cells comparisons')
+    parser.add_argument('-q', '--quiet', default=False, action='store_true',
+                        help='be verbose about cells comparisons')
+    parser.add_argument('-O', '--stdout', default=False, action='store_true',
+        help='Print converted output instead of sending it to a file')
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        log.setLevel(logging.INFO)
+    if args.quiet:
+        log.setLevel(logging.CRITICAL)
+
+
+    for ipynb in args.inputs:
+        log.warning('Running '+ ipynb)
         with open(ipynb) as f:
             nb = reads(f.read(), 'json')
         output_nb = test_notebook(nb)    
-        with open(ipynb, 'w') as f:
-            x = writes(output_nb, 'json')
-            f.write(x)
+        nb_as_json = writes(output_nb, 'json')
+        if args.stdout:
+            sys.stdout.write(nb_as_json)
+        else:
+            outfile = args.prefix+ipynb
+            with open(outfile, 'w') as f:
+                f.write(nb_as_json)
+            log.warning("Wrote file " + outfile)
