@@ -13,6 +13,8 @@ import sys
 from IPython.nbformat import current as nbformat
 
 
+
+
 def clear_outputs(nb):
     """Clear output of notebook `nb` INPLACE."""
     for ws in nb.worksheets:
@@ -49,9 +51,11 @@ def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('inputs', nargs='+', metavar='input',
                         help='Paths to notebook files.')
-    parser.add_argument('-i', '--inplace', '--in-place', default=False,
+    #XXX: TODO: handle alternative outputs here, such as to stdout or to file
+    parser.add_argument('-i', '--inplace', '--in-place', default=True,
             action='store_true', 
             help='Overwrite existing notebook when given.')
+
     args = parser.parse_args()
     stripoutput(**vars(args))
 
