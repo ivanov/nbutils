@@ -132,7 +132,7 @@ def run_cell(km, cell):
     return outs
     
 
-def test_notebook(nb):
+def test_notebook(nb, halt_on_error=True):
     km = BlockingKernelManager()
     km.start_kernel(extra_arguments=['--pylab=inline'], stderr=open(os.devnull, 'w'))
     km.start_channels()
@@ -160,6 +160,12 @@ def test_notebook(nb):
                 print cell.input
                 errors += 1
                 continue
+            c = '.'
+            for out in outs:
+                if out['output_type'] == 'pyerr':
+                    c = 'E'
+            if log.getEffectiveLevel() < logging.FATAL:
+                sys.stderr.write(c)
             
             failed = False
             for out, ref in zip(outs, cell.outputs):
@@ -170,8 +176,8 @@ def test_notebook(nb):
             else:
                 successes += 1
             cell.outputs = outs
-            if log.getEffectiveLevel() < logging.FATAL:
-                sys.stderr.write('.')
+            if c == 'E' and halt_on_error:
+                break;
 
     if log.getEffectiveLevel() <= logging.WARNING:
         sys.stderr.write('\n')
@@ -203,6 +209,8 @@ if __name__ == '__main__':
                         help='be verbose about cells comparisons')
     parser.add_argument('-O', '--stdout', default=False, action='store_true',
         help='Print converted output instead of sending it to a file')
+    parser.add_argument('-A', '--all', default=False, action='store_true', 
+            help="Try to run all cells (by default will halt on first error)")
 
     args = parser.parse_args()
 
@@ -213,10 +221,10 @@ if __name__ == '__main__':
 
 
     for ipynb in args.inputs:
-        log.warning('Running '+ ipynb)
+        log.info('Running '+ ipynb)
         with open(ipynb) as f:
             nb = reads(f.read(), 'json')
-        output_nb = test_notebook(nb)    
+        output_nb = test_notebook(nb, not args.all)    
         nb_as_json = writes(output_nb, 'json')
         if args.stdout:
             sys.stdout.write(nb_as_json)
@@ -224,4 +232,6 @@ if __name__ == '__main__':
             outfile = args.prefix+ipynb
             with open(outfile, 'w') as f:
                 f.write(nb_as_json)
-            log.warning("Wrote file " + outfile)
+            if log.getEffectiveLevel() < logging.CRITICAL:
+                print outfile
+            log.info("Wrote file " + outfile)
