@@ -34,8 +34,6 @@ and the last exploded notebook will have its first cell be::
 By default, the output of this command is just the filenames of the created
 notebooks, this way you can do something like this::
 
-    nbexplode params.ipynb | parallel nbrun
+    nbexplode params.ipynb | xargs -n1 -P4 nbrun
 
-In this example, we used `GNU parallel
-<http://www.gnu.org/software/parallel/>`_ to run a bunch of notebooks at the
-same time.
+In this example, we used xargs to run a bunch of notebooks at the same time.
