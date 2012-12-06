@@ -79,7 +79,8 @@ def explode(nb, quiet=False, stdout=False):
     saved = params.pop('__save__', [])
     saved_params =", ".join(["%s=%s"% (var,var) for var in saved])
     last_cell  = nb.worksheets[0].cells[0].copy()
-    nb.worksheets[0].cells.append(last_cell)
+    if saved:
+        nb.worksheets[0].cells.append(last_cell)
     for i, p in enumerate(itertools.product(*params.values())):
         log.info("p = %s", p)
         basename = ipynb.rsplit('.ipynb')[0]
