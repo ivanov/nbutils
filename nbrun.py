@@ -83,15 +83,27 @@ def compare_outputs(test, ref, skip_compare=('png', 'traceback', 'latex', 'promp
             return False
     return True
 
+def get_child_msg(km, msg_id):
+    while True:
+        # get_msg will raise with Empty exception if no messages arrive in 1
+        # second
+        m= km.shell_channel.get_msg()
+        if m['parent_header']['msg_id'] == msg_id:
+            break
+        else:
+            #got a message, but not the one we were looking for
+            print "SKIPPING:" +  str(m['content'])
+    return m
 
 def run_cell(km, cell):
     shell = km.shell_channel
     iopub = km.sub_channel
     # print "\n\ntesting:"
     # print cell.input
-    shell.execute(cell.input)
-    # wait for finish, maximum 20s
-    shell.get_msg(timeout=20)
+    msg_id = shell.execute(cell.input)
+    # wait for finish, no maximum
+    msg = get_child_msg(km, msg_id)
+    execution_count = msg['content']['execution_count']
     outs = []
     
     while True:
@@ -129,16 +141,21 @@ def run_cell(km, cell):
             print "unhandled iopub msg:", msg_type
         
         outs.append(out)
-    return outs
+    return outs, execution_count
     
 
-def test_notebook(nb, halt_on_error=True):
-    km = BlockingKernelManager()
-    km.start_kernel(extra_arguments=['--pylab=inline'], stderr=open(os.devnull, 'w'))
-    km.start_channels()
+def test_notebook(nb, halt_on_error=True, km=None):
+    our_kernel = km is None
+    if our_kernel:
+        km = BlockingKernelManager()
+        km.start_kernel(extra_arguments=['--pylab=inline'], stderr=open(os.devnull, 'w'))
+        km.start_channels()
+    print km.connection_file
     # run %pylab inline, because some notebooks assume this
     # even though they shouldn't
     km.shell_channel.execute("pass")
+    km.shell_channel.get_msg()
+    km.restart_kernel()
     km.shell_channel.get_msg()
     while True:
         try:
@@ -149,14 +166,16 @@ def test_notebook(nb, halt_on_error=True):
     successes = 0
     failures = 0
     errors = 0
+    halted = False
     for ws in nb.worksheets:
         for cell in ws.cells:
             if cell.cell_type != 'code':
                 continue
             try:
-                outs = run_cell(km, cell)
+                outs, exec_count = run_cell(km, cell)
             except Exception as e:
-                print "failed to run cell:", repr(e)
+                log.critical( "failed to run cell:"+ repr(e))
+                log.critical("tested notebook %s" % nb.metadata.name)
                 print cell.input
                 errors += 1
                 continue
@@ -168,15 +187,18 @@ def test_notebook(nb, halt_on_error=True):
                 sys.stderr.write(c)
             
             failed = False
-            for out, ref in zip(outs, cell.outputs):
-                if not compare_outputs(out, ref):
-                    failed = True
+            #for out, ref in zip(outs, cell.outputs):
+            #    if not compare_outputs(out, ref):
+            #        failed = True
             if failed:
                 failures += 1
             else:
                 successes += 1
             cell.outputs = outs
+            cell.prompt_number = exec_count
             if c == 'E' and halt_on_error:
+                log.info("halting on error")
+                halted = True
                 break;
 
     if log.getEffectiveLevel() <= logging.WARNING:
@@ -187,9 +209,10 @@ def test_notebook(nb, halt_on_error=True):
         log.info("    %3i cells mismatched output" % failures)
     if errors:
         log.info("    %3i cells failed to complete" % errors)
-    km.shutdown_kernel()
-    del km
-    return nb
+    if our_kernel:
+        km.shutdown_kernel()
+        del km
+    return nb, halted
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
@@ -209,8 +232,12 @@ if __name__ == '__main__':
                         help='be verbose about cells comparisons')
     parser.add_argument('-O', '--stdout', default=False, action='store_true',
         help='Print converted output instead of sending it to a file')
-    parser.add_argument('-A', '--all', default=False, action='store_true', 
+    parser.add_argument('-a', '--all', '--all-cells', default=False,
+            action='store_true', 
             help="Try to run all cells (by default will halt on first error)")
+    parser.add_argument('-A', '--allnotebooks', '--all-notebooks',
+            default=False, action='store_true', 
+            help="Try to run all notebook (by default will halt on first error)")
 
     args = parser.parse_args()
 
@@ -220,11 +247,17 @@ if __name__ == '__main__':
         log.setLevel(logging.CRITICAL)
 
 
+    km = BlockingKernelManager()
+    km.start_kernel(extra_arguments=['--pylab=inline'], stderr=open(os.devnull, 'w'))
+    km.start_channels()
+
+    halt_on_error = not args.all
+    halt_notebooks  = not args.allnotebooks
     for ipynb in args.inputs:
         log.info('Running '+ ipynb)
         with open(ipynb) as f:
             nb = reads(f.read(), 'json')
-        output_nb = test_notebook(nb, not args.all)    
+        output_nb, halted = test_notebook(nb, halt_on_error, km)
         nb_as_json = writes(output_nb, 'json')
         if args.stdout:
             sys.stdout.write(nb_as_json)
@@ -235,3 +268,8 @@ if __name__ == '__main__':
             if log.getEffectiveLevel() < logging.CRITICAL:
                 print outfile
             log.info("Wrote file " + outfile)
+        if halted and halt_notebooks:
+            break
+    km.shutdown_kernel()
+    del km
+    sys.exit(halted and halt_notebooks)
