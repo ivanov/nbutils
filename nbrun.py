@@ -17,6 +17,7 @@ from Queue import Empty
 
 from IPython.zmq.blockingkernelmanager import BlockingKernelManager
 from IPython.nbformat.current import reads, writes, NotebookNode
+import IPython.nbformat.current  as cur
 
 import logging
 logging.basicConfig(format='%(message)s')
@@ -257,6 +258,10 @@ if __name__ == '__main__':
         log.info('Running '+ ipynb)
         with open(ipynb) as f:
             nb = reads(f.read(), 'json')
+        # here, before running the notebook, it'd be nice if we verified it's
+        # metadata.name, and adjusted it according to the current filename, so
+        # let's do that
+        nb.metadata.name = os.path.basename(os.path.splitext(ipynb)[0])
         output_nb, halted = test_notebook(nb, halt_on_error, km)
         nb_as_json = writes(output_nb, 'json')
         if args.stdout:
