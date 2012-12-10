@@ -200,6 +200,8 @@ def test_notebook(nb, halt_on_error=True, km=None):
             if c == 'E' and halt_on_error:
                 log.info("halting on error")
                 halted = True
+                # XXX: this next part is specific to nbexplode
+                save_intermediate(km, ws, cell, nb.metadata.name)
                 break;
 
     if log.getEffectiveLevel() <= logging.WARNING:
@@ -214,6 +216,47 @@ def test_notebook(nb, halt_on_error=True, km=None):
         km.shutdown_kernel()
         del km
     return nb, halted
+
+def save_intermediate(km, ws, cell, save_name=None):
+    """
+    Conditionally save __save__ variables on error, and perhaps add a cell to
+    load them up again into the worksheet.
+
+    This will be utilized via a command-line flag.
+    """
+    saving_tmpl = """#error happend here, execute this cell to reload state
+_load = False
+_name = '%s'
+if '__save__' in locals():
+    d = {}
+    for k in __save__:
+        try:
+            d[k] = locals()[k]
+        # for things that are meant to be saved but that haven't executed yet
+        except KeyError:
+            d[k] = None
+    np.savez(_name, **d)
+    print "saved " + _name + '.npz'
+if _load:
+    loaded = np.load(_name+'.npz')
+    print loaded.keys(), "now injected into this namespace"
+    locals().update(loaded)
+    """
+    if not save_name:
+        save_name = ''
+    save_name += '_error'
+    save_cell = cur.new_code_cell(saving_tmpl%save_name,"-1")
+    if hasattr(km, 'saveonerror') and km.saveonerror:
+        idx = ws.cells.index(cell)
+        outs, exec_count = run_cell(km, save_cell)
+        save_cell.outputs = outs
+        # XXX: the problem with this approach is that after the first error,
+        # the whole notebook must be regenerated in order to not have this
+        # saving code in it
+        ws.cells.insert(idx+1, save_cell)
+
+
+    pass
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
@@ -234,10 +277,13 @@ if __name__ == '__main__':
     parser.add_argument('-O', '--stdout', default=False, action='store_true',
         help='Print converted output instead of sending it to a file')
     parser.add_argument('-a', '--all', '--all-cells', default=False,
-            action='store_true', 
+            action='store_true',
+            help="Try to run all cells (by default will halt on first error)")
+    parser.add_argument('-s', '--saveonerror', '--save-on-error',
+            default=False, action='store_true',
             help="Try to run all cells (by default will halt on first error)")
     parser.add_argument('-A', '--allnotebooks', '--all-notebooks',
-            default=False, action='store_true', 
+            default=False, action='store_true',
             help="Try to run all notebook (by default will halt on first error)")
 
     args = parser.parse_args()
@@ -251,6 +297,11 @@ if __name__ == '__main__':
     km = BlockingKernelManager()
     km.start_kernel(extra_arguments=['--pylab=inline'], stderr=open(os.devnull, 'w'))
     km.start_channels()
+
+
+    if args.saveonerror:
+        # XXX: hack - just dange an attribute we can check against
+        km.saveonerror = True
 
     halt_on_error = not args.all
     halt_notebooks  = not args.allnotebooks
