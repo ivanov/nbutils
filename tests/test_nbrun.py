@@ -10,7 +10,8 @@ def test_running_renamed():
     with file(newname + '.ipynb') as nbf:
         nb = reads(nbf.read(), 'ipynb')
         npt.assert_(nb.metadata.name != newname)
-    os.system('nbrun renamed_notebook.ipynb')
+    os.system('nbrun ' + newname + '.ipynb')
     with file(newname + '.ipynb') as nbf:
         nb = reads(nbf.read(), 'ipynb')
         npt.assert_(nb.metadata.name == newname)
+    os.remove(newname + '.ipynb')
