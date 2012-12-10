@@ -17,7 +17,8 @@ def merge_notebooks(filenames):
     merged = None
     for fname in filenames:
         with io.open(fname, 'r', encoding='utf-8') as f:
-            nb = current.read(f, 'json')
+            fmt = 'json' if not fname.endswith('.py') else 'py'
+            nb = current.read(f, fmt)
         if merged is None:
             merged = nb
         else:
@@ -25,6 +26,8 @@ def merge_notebooks(filenames):
             # like an horizontal rule, for example, or some other arbitrary
             # (user specified) markdown cell)
             merged.worksheets[0].cells.extend(nb.worksheets[0].cells)
+    if not hasattr(merged.metadata, 'name'):
+        merged.metadata.name = ''
     merged.metadata.name += "_merged"
     print current.writes(merged, 'json')
 
