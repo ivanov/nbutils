@@ -48,6 +48,7 @@ try:
     raise AlreadyRan("it appears this notebook already ran on %%s, halting" %%t)
 except IOError:
     pass
+__save__ = %s
 """
 
 
@@ -92,7 +93,7 @@ def explode(nb, quiet=False, stdout=False):
         # XXX: the code below won't currently work for callables, I think
         for k,v in zip(params.keys(), p):
             assignments.append('%s = %s' % (k,repr(v)))
-        loader  = loader_template % outfile if len(saved) else ''
+        loader  = loader_template % (outfile, saved) if len(saved) else ''
         first_cell.input = header + "\n".join(assignments) + loader
         last_cell.input = footer_template % (outfile, saved_params)
         nb_as_json = writes(nb, 'json')
