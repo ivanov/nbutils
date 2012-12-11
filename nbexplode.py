@@ -28,6 +28,7 @@ and the last exploded notebook will have its first cell be::
 import os
 import logging
 import itertools
+import types
 from collections import OrderedDict
 from IPython.nbformat.current import reads, writes
 
@@ -78,6 +79,7 @@ def explode(nb, quiet=False, stdout=False):
     exec(first_cell.input, globals(), params)
 
     saved = params.pop('__save__', [])
+    [params.pop(k) for k in params if isinstance(params[k], types.ModuleType)]
     saved_params =", ".join(["%s=%s"% (var,var) for var in saved])
     last_cell  = nb.worksheets[0].cells[0].copy()
     if saved:
